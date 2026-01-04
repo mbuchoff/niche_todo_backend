@@ -1,0 +1,16 @@
+# ABOUTME: Illustrates safe defaults for spinning up the AWS Postgres stack locally.
+# ABOUTME: Copy to postgres.auto.tfvars and edit values before running OpenTofu commands.
+
+aws_region  = "us-east-1"
+aws_profile = "niche-todo-admin"
+stack_name  = "todo-backend"
+db_name     = "tododb"
+db_username = "todoadmin"
+db_password = "ChangeMe123!"
+
+# Replace the CIDR block with your laptop's public IP (use https://ifconfig.me) and /32 mask.
+allowed_cidr_blocks = ["203.0.113.42/32"]
+
+publicly_accessible = true
+apply_immediately   = true
+skip_final_snapshot = true

@@ -1,0 +1,19 @@
+# ABOUTME: Keeps generated, secret, or environment-specific files out of version control.
+# ABOUTME: Central ignore list for the Todo Backend repo including infra tfvars files.
+
+# Ignore OpenTofu/Terraform variable/state files (sensitive environment-specific values)
+*.tfvars
+*.tfstate
+*.tfstate.*
+
+# IDE and user-specific files
+.idea/
+.vs/
+*.user
+*.suo
+
+# Build outputs
+bin/
+obj/
+**/bin/
+**/obj/
