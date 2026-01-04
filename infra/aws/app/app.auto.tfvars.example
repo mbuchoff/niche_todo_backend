@@ -1,0 +1,11 @@
+# ABOUTME: Sample variables for the AWS API stack showing required inputs like DB secrets.
+# ABOUTME: Copy to app.auto.tfvars and edit before running OpenTofu locally.
+
+stack_name = "todo-backend"
+aws_profile = "niche-todo-admin"
+allowed_ingress_cidr_blocks = ["203.0.113.42/32"]
+desired_count = 2
+task_cpu = 512
+task_memory = 1024
+container_image = "123456789012.dkr.ecr.us-east-1.amazonaws.com/todo-backend-api:latest"
+database_connection_string = "Host=example.cluster-123456789012.us-east-1.rds.amazonaws.com;Port=5432;Database=tododb;Username=todoadmin;Password=change-me;Ssl Mode=Require"

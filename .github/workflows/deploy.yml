@@ -1,0 +1,79 @@
+# ABOUTME: GitHub Actions pipeline that builds the API container, pushes to ECR, then applies OpenTofu.
+# ABOUTME: Automates AWS deployments by coordinating Docker, AWS credentials, and infra provisioning.
+
+name: Deploy Todo Backend API
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  DOTNET_VERSION: 10.0.101
+  ECR_REPOSITORY: todo-backend-api
+  INFRA_DIRECTORY: infra/aws/app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TF_VAR_database_connection_string: ${{ secrets.DATABASE_CONNECTION_STRING }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Run tests
+        run: dotnet test TodoBackend.sln --configuration Release --no-build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: build-image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE_URI=${REGISTRY}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          docker build -f src/TodoBackend.Api/Dockerfile -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+          echo "image-uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure secrets available
+        run: |
+          if [ -z "${TF_VAR_database_connection_string}" ]; then
+            echo "DATABASE_CONNECTION_STRING secret is required." >&2
+            exit 1
+          fi
+
+      - name: Export image for OpenTofu
+        run: echo "TF_VAR_container_image=${{ steps.build-image.outputs.image-uri }}" >> "$GITHUB_ENV"
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: Apply infrastructure
+        working-directory: ${{ env.INFRA_DIRECTORY }}
+        run: |
+          tofu init -input=false
+          tofu apply -auto-approve

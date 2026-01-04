@@ -276,6 +276,9 @@ app.MapGet("/me", async Task<IResult> (
 .WithName("Me")
 .WithOpenApi();
 
+app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }))
+    .WithName("Healthz");
+
 app.Run();
 
 static AuthResponse ToAuthResponse(User user, TokenPair pair, DateTimeOffset issuedAt)

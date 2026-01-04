@@ -1,0 +1,15 @@
+# ABOUTME: Limits Docker build context for the Todo Backend API image.
+# ABOUTME: Skips unnecessary assets like build outputs, infra files, and VCS metadata.
+
+bin/
+obj/
+**/bin/
+**/obj/
+tests/
+infra/
+.git
+.github
+.vs/
+.idea/
+README.md
+AUTH_PLAN.md
