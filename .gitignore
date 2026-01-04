@@ -5,6 +5,8 @@
 *.tfvars
 *.tfstate
 *.tfstate.*
+.terraform/
+**/.terraform/
 
 # IDE and user-specific files
 .idea/
