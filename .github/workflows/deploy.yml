@@ -36,9 +36,10 @@ jobs:
         run: dotnet restore
 
       - name: Run tests
-        run: dotnet test TodoBackend.sln --configuration Release --no-build
+        run: dotnet test TodoBackend.sln --configuration Release
 
       - name: Configure AWS credentials
+        if: env.ACT != 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -46,16 +47,25 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
+        if: env.ACT != 'true'
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push image
+      - name: Build image
         id: build-image
+        run: |
+          IMAGE_TAG=todo-backend-api:${{ github.sha }}
+          docker build -f src/TodoBackend.Api/Dockerfile -t "$IMAGE_TAG" .
+          echo "image-uri=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Tag and push image
+        if: env.ACT != 'true'
+        id: push-image
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           IMAGE_URI=${REGISTRY}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-          docker build -f src/TodoBackend.Api/Dockerfile -t "$IMAGE_URI" .
+          docker tag ${{ steps.build-image.outputs.image-uri }} "$IMAGE_URI"
           docker push "$IMAGE_URI"
           echo "image-uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
@@ -67,13 +77,23 @@ jobs:
           fi
 
       - name: Export image for OpenTofu
-        run: echo "TF_VAR_container_image=${{ steps.build-image.outputs.image-uri }}" >> "$GITHUB_ENV"
+        run: |
+          IMAGE_URI="${{ steps.push-image.outputs.image-uri }}"
+          if [ -z "$IMAGE_URI" ]; then
+            IMAGE_URI="${{ steps.build-image.outputs.image-uri }}"
+          fi
+          echo "TF_VAR_container_image=$IMAGE_URI" >> "$GITHUB_ENV"
 
       - name: Set up OpenTofu
         uses: opentofu/setup-opentofu@v1
 
       - name: Apply infrastructure
+        if: env.ACT != 'true'
         working-directory: ${{ env.INFRA_DIRECTORY }}
         run: |
           tofu init -input=false
           tofu apply -auto-approve
+
+      - name: Skip infrastructure apply locally
+        if: env.ACT == 'true'
+        run: echo "Skipping AWS apply when running under act."
