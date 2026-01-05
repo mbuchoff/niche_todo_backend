@@ -84,16 +84,5 @@ jobs:
           fi
           echo "TF_VAR_container_image=$IMAGE_URI" >> "$GITHUB_ENV"
 
-      - name: Set up OpenTofu
-        uses: opentofu/setup-opentofu@v1
-
-      - name: Apply infrastructure
-        if: env.ACT != 'true'
-        working-directory: ${{ env.INFRA_DIRECTORY }}
-        run: |
-          tofu init -input=false
-          tofu apply -auto-approve
-
-      - name: Skip infrastructure apply locally
-        if: env.ACT == 'true'
-        run: echo "Skipping AWS apply when running under act."
+      - name: Skip infrastructure apply
+        run: echo "Skipping OpenTofu apply in GitHub Actions for now."
