@@ -65,8 +65,11 @@ jobs:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           IMAGE_URI=${REGISTRY}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          IMAGE_URI_LATEST=${REGISTRY}/${{ env.ECR_REPOSITORY }}:latest
           docker tag ${{ steps.build-image.outputs.image-uri }} "$IMAGE_URI"
+          docker tag ${{ steps.build-image.outputs.image-uri }} "$IMAGE_URI_LATEST"
           docker push "$IMAGE_URI"
+          docker push "$IMAGE_URI_LATEST"
           echo "image-uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
       - name: Ensure secrets available
