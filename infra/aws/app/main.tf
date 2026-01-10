@@ -25,6 +25,14 @@ data "aws_caller_identity" "current" {}
 
 data "aws_partition" "current" {}
 
+data "aws_cloudfront_cache_policy" "disabled" {
+  name = "Managed-CachingDisabled"
+}
+
+data "aws_cloudfront_origin_request_policy" "all_viewer" {
+  name = "Managed-AllViewer"
+}
+
 locals {
   az_count = min(length(data.aws_availability_zones.available.names), 2)
   subnet_azs = {
@@ -178,6 +186,42 @@ resource "aws_lb_listener" "todo_backend_api" {
   }
 }
 
+resource "aws_cloudfront_distribution" "todo_backend_api" {
+  enabled = true
+
+  origin {
+    domain_name = aws_lb.todo_backend_api.dns_name
+    origin_id   = "${var.stack_name}-api-alb"
+
+    custom_origin_config {
+      http_port              = var.listener_port
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  default_cache_behavior {
+    target_origin_id       = "${var.stack_name}-api-alb"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"]
+    cached_methods         = ["GET", "HEAD", "OPTIONS"]
+    compress               = true
+    cache_policy_id        = data.aws_cloudfront_cache_policy.disabled.id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer.id
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+}
+
 resource "aws_cloudwatch_log_group" "todo_backend_api" {
   name              = "/todo-backend/${var.stack_name}/api"
   retention_in_days = var.log_retention_days
@@ -219,6 +263,33 @@ resource "aws_iam_role" "todo_backend_api_execution" {
 resource "aws_iam_role_policy_attachment" "execution_policy" {
   role       = aws_iam_role.todo_backend_api_execution.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy" "execution_parameter_access" {
+  name = "${var.stack_name}-api-execution-ssm"
+  role = aws_iam_role.todo_backend_api_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath"
+        ]
+        Resource = [
+          aws_ssm_parameter.todo_backend_db_connection.arn
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = "kms:Decrypt"
+        Resource = "arn:${data.aws_partition.current.partition}:kms:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alias/aws/ssm"
+      }
+    ]
+  })
 }
 
 resource "aws_iam_role" "todo_backend_api_task" {

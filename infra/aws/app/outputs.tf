@@ -11,6 +11,16 @@ output "alb_arn" {
   value       = aws_lb.todo_backend_api.arn
 }
 
+output "cloudfront_domain_name" {
+  description = "CloudFront distribution domain name for HTTPS access."
+  value       = aws_cloudfront_distribution.todo_backend_api.domain_name
+}
+
+output "cloudfront_distribution_id" {
+  description = "CloudFront distribution ID for cache invalidation or status checks."
+  value       = aws_cloudfront_distribution.todo_backend_api.id
+}
+
 output "ecs_cluster_name" {
   description = "Name of the ECS cluster hosting the API."
   value       = aws_ecs_cluster.todo_backend_api.name
