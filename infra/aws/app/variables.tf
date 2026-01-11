@@ -101,3 +101,15 @@ variable "database_connection_string" {
     error_message = "database_connection_string must be supplied via TF_VAR_database_connection_string or a tfvars file."
   }
 }
+
+variable "database_security_group_id" {
+  description = "Optional security group ID for the Postgres database to allow inbound from ECS."
+  type        = string
+  default     = null
+}
+
+variable "database_port" {
+  description = "Port the Postgres database listens on."
+  type        = number
+  default     = 5432
+}

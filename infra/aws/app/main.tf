@@ -144,6 +144,17 @@ resource "aws_security_group" "service" {
   }
 }
 
+resource "aws_security_group_rule" "db_ingress_from_service" {
+  count                    = var.database_security_group_id == null ? 0 : 1
+  type                     = "ingress"
+  description              = "Allow Postgres from ECS service tasks."
+  from_port                = var.database_port
+  to_port                  = var.database_port
+  protocol                 = "tcp"
+  security_group_id        = var.database_security_group_id
+  source_security_group_id = aws_security_group.service.id
+}
+
 resource "aws_lb" "todo_backend_api" {
   name               = "${var.stack_name}-api"
   internal           = false
