@@ -291,6 +291,8 @@ var todosGroup = app.MapGroup("/todos")
     .RequireAuthorization()
     .WithOpenApi();
 
+const int todoTitleMaxLength = 256;
+
 todosGroup.MapGet("", async Task<IResult> (
     ClaimsPrincipal principal,
     TodoDbContext db,
@@ -325,6 +327,15 @@ todosGroup.MapPost("", async Task<IResult> (
         });
     }
 
+    var trimmedTitle = request.Title.Trim();
+    if (trimmedTitle.Length > todoTitleMaxLength)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["title"] = [$"title must be {todoTitleMaxLength} characters or fewer."]
+        });
+    }
+
     if (!TryGetUserId(principal, out var userId))
     {
         return Results.Unauthorized();
@@ -338,7 +349,7 @@ todosGroup.MapPost("", async Task<IResult> (
     {
         Id = Guid.NewGuid(),
         UserId = userId,
-        Title = request.Title.Trim(),
+        Title = trimmedTitle,
         StartDateTimeUtc = NormalizeUtc(request.StartDateTimeUtc),
         EndDateTimeUtc = NormalizeUtc(request.EndDateTimeUtc),
         IsCompleted = request.IsCompleted,
@@ -367,6 +378,15 @@ todosGroup.MapPut("/{id:guid}", async Task<IResult> (
         });
     }
 
+    var trimmedTitle = request.Title.Trim();
+    if (trimmedTitle.Length > todoTitleMaxLength)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["title"] = [$"title must be {todoTitleMaxLength} characters or fewer."]
+        });
+    }
+
     if (!TryGetUserId(principal, out var userId))
     {
         return Results.Unauthorized();
@@ -380,7 +400,7 @@ todosGroup.MapPut("/{id:guid}", async Task<IResult> (
         return Results.NotFound();
     }
 
-    todo.Title = request.Title.Trim();
+    todo.Title = trimmedTitle;
     todo.StartDateTimeUtc = NormalizeUtc(request.StartDateTimeUtc);
     todo.EndDateTimeUtc = NormalizeUtc(request.EndDateTimeUtc);
     todo.IsCompleted = request.IsCompleted;

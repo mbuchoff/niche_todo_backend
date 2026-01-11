@@ -4,6 +4,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Mvc;
 using TodoBackend.Api.Auth.Contracts;
 
 namespace TodoBackend.Tests.Todos;
@@ -59,6 +60,28 @@ public sealed class TodoEndpointsTests
     }
 
     [Fact]
+    public async Task CreateTodo_RejectsTitleOverMaxLength()
+    {
+        await using var factory = new TestAppFactory();
+        using var client = factory.CreateClient();
+        var accessToken = await AuthenticateAsync(factory, client);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        var longTitle = new string('a', 257);
+        var response = await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest(longTitle, null, null, false)
+        );
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var details = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+        Assert.NotNull(details);
+        Assert.Contains("title", details!.Errors.Keys);
+    }
+
+    [Fact]
     public async Task UpdateTodo_ChangesFields()
     {
         await using var factory = new TestAppFactory();
@@ -90,6 +113,35 @@ public sealed class TodoEndpointsTests
         Assert.Equal("Updated", updated!.Title);
         Assert.True(updated.IsCompleted);
         Assert.Equal(new DateTimeOffset(2025, 4, 1, 9, 0, 0, TimeSpan.Zero), updated.StartDateTimeUtc);
+    }
+
+    [Fact]
+    public async Task UpdateTodo_RejectsTitleOverMaxLength()
+    {
+        await using var factory = new TestAppFactory();
+        using var client = factory.CreateClient();
+        var accessToken = await AuthenticateAsync(factory, client);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        var createResponse = await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Initial", null, null, false)
+        );
+        var created = await createResponse.Content.ReadFromJsonAsync<TodoResponse>();
+        Assert.NotNull(created);
+
+        var longTitle = new string('a', 257);
+        var updateResponse = await client.PutAsJsonAsync(
+            $"/todos/{created!.Id}",
+            new UpdateTodoRequest(longTitle, null, null, false)
+        );
+
+        Assert.Equal(HttpStatusCode.BadRequest, updateResponse.StatusCode);
+
+        var details = await updateResponse.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+        Assert.NotNull(details);
+        Assert.Contains("title", details!.Errors.Keys);
     }
 
     [Fact]
