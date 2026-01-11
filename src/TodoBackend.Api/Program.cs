@@ -7,12 +7,14 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using TodoBackend.Api.Auth.Contracts;
 using TodoBackend.Api.Auth.Entities;
 using TodoBackend.Api.Auth.Options;
 using TodoBackend.Api.Auth.Services;
 using TodoBackend.Api.Data;
 using TodoBackend.Api.Security;
+using TodoBackend.Api.Todos;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,7 +25,19 @@ if (builder.Environment.IsDevelopment())
 
 builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.AddSecurityDefinition("Google", new OpenApiSecurityScheme
+    {
+        Description = "JWT from /auth/google. Use https://developers.google.com/oauthplayground/ to obtain a Google ID token, then exchange it.",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT"
+    });
+    options.OperationFilter<AuthorizedEndpointsOperationFilter>();
+});
 builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.Configure<GoogleAuthOptions>(builder.Configuration.GetSection("Auth:Google"));
@@ -256,10 +270,7 @@ app.MapGet("/me", async Task<IResult> (
     TodoDbContext db,
     CancellationToken cancellationToken) =>
 {
-    var userIdValue = principal.FindFirstValue(ClaimTypes.NameIdentifier) ??
-                      principal.FindFirstValue("sub");
-
-    if (!Guid.TryParse(userIdValue, out var userId))
+    if (!TryGetUserId(principal, out var userId))
     {
         return Results.Unauthorized();
     }
@@ -276,6 +287,209 @@ app.MapGet("/me", async Task<IResult> (
 .WithName("Me")
 .WithOpenApi();
 
+var todosGroup = app.MapGroup("/todos")
+    .RequireAuthorization()
+    .WithOpenApi();
+
+const int todoTitleMaxLength = 256;
+
+todosGroup.MapGet("", async Task<IResult> (
+    ClaimsPrincipal principal,
+    TodoDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    if (!TryGetUserId(principal, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var todos = await db.Todos
+        .AsNoTracking()
+        .Where(todo => todo.UserId == userId)
+        .OrderBy(todo => todo.SortOrder)
+        .ToListAsync(cancellationToken);
+
+    return Results.Ok(todos.Select(ToTodoResponse).ToList());
+})
+.WithName("GetTodos");
+
+todosGroup.MapPost("", async Task<IResult> (
+    [FromBody] CreateTodoRequest request,
+    ClaimsPrincipal principal,
+    TodoDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    if (request is null || string.IsNullOrWhiteSpace(request.Title))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["title"] = ["title is required."]
+        });
+    }
+
+    var trimmedTitle = request.Title.Trim();
+    if (trimmedTitle.Length > todoTitleMaxLength)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["title"] = [$"title must be {todoTitleMaxLength} characters or fewer."]
+        });
+    }
+
+    if (!TryGetUserId(principal, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var maxOrder = await db.Todos
+        .Where(todo => todo.UserId == userId)
+        .MaxAsync(todo => (int?)todo.SortOrder, cancellationToken);
+
+    var todo = new TodoItem
+    {
+        Id = Guid.NewGuid(),
+        UserId = userId,
+        Title = trimmedTitle,
+        StartDateTimeUtc = NormalizeUtc(request.StartDateTimeUtc),
+        EndDateTimeUtc = NormalizeUtc(request.EndDateTimeUtc),
+        IsCompleted = request.IsCompleted,
+        SortOrder = (maxOrder ?? -1) + 1
+    };
+
+    await db.Todos.AddAsync(todo, cancellationToken);
+    await db.SaveChangesAsync(cancellationToken);
+
+    return Results.Created($"/todos/{todo.Id}", ToTodoResponse(todo));
+})
+.WithName("CreateTodo");
+
+todosGroup.MapPut("/{id:guid}", async Task<IResult> (
+    Guid id,
+    [FromBody] UpdateTodoRequest request,
+    ClaimsPrincipal principal,
+    TodoDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    if (request is null || string.IsNullOrWhiteSpace(request.Title))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["title"] = ["title is required."]
+        });
+    }
+
+    var trimmedTitle = request.Title.Trim();
+    if (trimmedTitle.Length > todoTitleMaxLength)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["title"] = [$"title must be {todoTitleMaxLength} characters or fewer."]
+        });
+    }
+
+    if (!TryGetUserId(principal, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var todo = await db.Todos.SingleOrDefaultAsync(
+        item => item.Id == id && item.UserId == userId,
+        cancellationToken);
+    if (todo is null)
+    {
+        return Results.NotFound();
+    }
+
+    todo.Title = trimmedTitle;
+    todo.StartDateTimeUtc = NormalizeUtc(request.StartDateTimeUtc);
+    todo.EndDateTimeUtc = NormalizeUtc(request.EndDateTimeUtc);
+    todo.IsCompleted = request.IsCompleted;
+
+    await db.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(ToTodoResponse(todo));
+})
+.WithName("UpdateTodo");
+
+todosGroup.MapDelete("/{id:guid}", async Task<IResult> (
+    Guid id,
+    ClaimsPrincipal principal,
+    TodoDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    if (!TryGetUserId(principal, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var todo = await db.Todos.SingleOrDefaultAsync(
+        item => item.Id == id && item.UserId == userId,
+        cancellationToken);
+    if (todo is null)
+    {
+        return Results.NotFound();
+    }
+
+    db.Todos.Remove(todo);
+    await db.SaveChangesAsync(cancellationToken);
+    return Results.NoContent();
+})
+.WithName("DeleteTodo");
+
+todosGroup.MapPut("/reorder", async Task<IResult> (
+    [FromBody] ReorderTodosRequest request,
+    ClaimsPrincipal principal,
+    TodoDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    if (request?.OrderedIds is null || request.OrderedIds.Count == 0)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["orderedIds"] = ["orderedIds must contain every todo id."]
+        });
+    }
+
+    if (!TryGetUserId(principal, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var todos = await db.Todos
+        .Where(todo => todo.UserId == userId)
+        .ToListAsync(cancellationToken);
+
+    if (todos.Count != request.OrderedIds.Count)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["orderedIds"] = ["orderedIds must contain every todo id."]
+        });
+    }
+
+    var orderedSet = request.OrderedIds.ToHashSet();
+    if (orderedSet.Count != todos.Count || todos.Any(todo => !orderedSet.Contains(todo.Id)))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["orderedIds"] = ["orderedIds must contain every todo id."]
+        });
+    }
+
+    var orderLookup = request.OrderedIds
+        .Select((id, index) => new { id, index })
+        .ToDictionary(item => item.id, item => item.index);
+
+    foreach (var todo in todos)
+    {
+        todo.SortOrder = orderLookup[todo.Id];
+    }
+
+    await db.SaveChangesAsync(cancellationToken);
+    return Results.NoContent();
+})
+.WithName("ReorderTodos");
+
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }))
     .WithName("Healthz");
 
@@ -289,6 +503,27 @@ static AuthResponse ToAuthResponse(User user, TokenPair pair, DateTimeOffset iss
         ttlSeconds,
         pair.RefreshToken,
         new AuthenticatedUser(user.Id, user.Email, user.Name, user.AvatarUrl));
+}
+
+static TodoResponse ToTodoResponse(TodoItem todo) =>
+    new(
+        todo.Id,
+        todo.Title,
+        todo.StartDateTimeUtc,
+        todo.EndDateTimeUtc,
+        todo.IsCompleted,
+        todo.SortOrder
+    );
+
+static DateTimeOffset? NormalizeUtc(DateTimeOffset? value) =>
+    value?.ToUniversalTime();
+
+static bool TryGetUserId(ClaimsPrincipal principal, out Guid userId)
+{
+    var userIdValue = principal.FindFirstValue(ClaimTypes.NameIdentifier) ??
+                      principal.FindFirstValue("sub");
+
+    return Guid.TryParse(userIdValue, out userId);
 }
 
 static string ResolveDeviceId(HttpContext context, string? fallback = null)

@@ -1,8 +1,9 @@
-// ABOUTME: Entity Framework Core DbContext for auth-related persistence needs.
-// ABOUTME: Configures users and refresh token tables with required indexes.
+// ABOUTME: Entity Framework Core DbContext for auth and todo persistence needs.
+// ABOUTME: Configures users, refresh tokens, and todo tables with required indexes.
 
 using Microsoft.EntityFrameworkCore;
 using TodoBackend.Api.Auth.Entities;
+using TodoBackend.Api.Todos;
 
 namespace TodoBackend.Api.Data;
 
@@ -10,6 +11,7 @@ public sealed class TodoDbContext(DbContextOptions<TodoDbContext> options) : DbC
 {
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<TodoItem> Todos => Set<TodoItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -42,6 +44,21 @@ public sealed class TodoDbContext(DbContextOptions<TodoDbContext> options) : DbC
             builder.HasOne(token => token.User)
                 .WithMany(user => user.RefreshTokens)
                 .HasForeignKey(token => token.UserId);
+        });
+
+        modelBuilder.Entity<TodoItem>(builder =>
+        {
+            builder.ToTable("todos");
+            builder.HasKey(todo => todo.Id);
+            builder.HasIndex(todo => new { todo.UserId, todo.SortOrder });
+            builder.Property(todo => todo.Title).IsRequired().HasMaxLength(256);
+            builder.Property(todo => todo.SortOrder).IsRequired();
+            builder.Property(todo => todo.StartDateTimeUtc);
+            builder.Property(todo => todo.EndDateTimeUtc);
+            builder.Property(todo => todo.IsCompleted).IsRequired();
+            builder.HasOne(todo => todo.User)
+                .WithMany(user => user.Todos)
+                .HasForeignKey(todo => todo.UserId);
         });
     }
 }

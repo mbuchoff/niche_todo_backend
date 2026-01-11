@@ -1,6 +1,8 @@
 // ABOUTME: Represents an authenticated user persisted from Google identity data.
 // ABOUTME: Acts as the aggregate root for issuing tokens and tracking profile updates.
 
+using TodoBackend.Api.Todos;
+
 namespace TodoBackend.Api.Auth.Entities;
 
 public sealed class User
@@ -14,4 +16,5 @@ public sealed class User
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastLoginAt { get; set; }
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
+    public ICollection<TodoItem> Todos { get; set; } = new List<TodoItem>();
 }
