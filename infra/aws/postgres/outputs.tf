@@ -28,3 +28,18 @@ output "db_connection_string" {
   )
   sensitive = true
 }
+
+output "vpc_id" {
+  description = "VPC hosting the Postgres instance."
+  value       = aws_vpc.todo_backend.id
+}
+
+output "public_subnet_ids" {
+  description = "Public subnet IDs used by the Postgres stack."
+  value       = [for subnet in aws_subnet.public : subnet.id]
+}
+
+output "db_security_group_id" {
+  description = "Security group ID attached to the Postgres instance."
+  value       = aws_security_group.todo_backend_postgres.id
+}

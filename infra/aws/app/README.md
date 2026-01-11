@@ -27,6 +27,8 @@ All runtime knobs live in `variables.tf`. Recommended workflow:
 2. Update the copy with environment-specific values. At minimum set `database_connection_string`.
 3. Alternatively pass values via `-var-file` or `TF_VAR_*` environment variables (the GitHub workflow uses secrets for this).
 
+Optional: reuse the Postgres stack VPC by setting `postgres_state_path` to the Postgres stack `terraform.tfstate` (or set `existing_vpc_id` and `public_subnet_ids` directly).
+
 ## Deploy
 
 ```bash

@@ -25,6 +25,24 @@ variable "vpc_cidr" {
   default     = "10.60.0.0/16"
 }
 
+variable "existing_vpc_id" {
+  description = "Optional VPC ID to reuse instead of creating a new VPC."
+  type        = string
+  default     = null
+}
+
+variable "public_subnet_ids" {
+  description = "Optional list of subnet IDs for ECS/ALB when reusing an existing VPC."
+  type        = list(string)
+  default     = null
+}
+
+variable "postgres_state_path" {
+  description = "Optional path to the postgres stack state file for reusing VPC/subnets."
+  type        = string
+  default     = null
+}
+
 variable "allowed_ingress_cidr_blocks" {
   description = "CIDR blocks permitted to access the public load balancer."
   type        = list(string)

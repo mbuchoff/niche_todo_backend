@@ -25,6 +25,15 @@ data "aws_caller_identity" "current" {}
 
 data "aws_partition" "current" {}
 
+data "terraform_remote_state" "postgres" {
+  count   = var.postgres_state_path == null ? 0 : 1
+  backend = "local"
+
+  config = {
+    path = var.postgres_state_path
+  }
+}
+
 data "aws_cloudfront_cache_policy" "disabled" {
   name = "Managed-CachingDisabled"
 }
@@ -38,10 +47,18 @@ locals {
   subnet_azs = {
     for idx, az in slice(data.aws_availability_zones.available.names, 0, local.az_count) : idx => az
   }
+  postgres_vpc_id = var.postgres_state_path == null ? null : try(data.terraform_remote_state.postgres[0].outputs.vpc_id, null)
+  postgres_public_subnet_ids = var.postgres_state_path == null ? null : try(data.terraform_remote_state.postgres[0].outputs.public_subnet_ids, null)
+  postgres_db_security_group_id = var.postgres_state_path == null ? null : try(data.terraform_remote_state.postgres[0].outputs.db_security_group_id, null)
+  use_existing_vpc = var.existing_vpc_id != null || local.postgres_vpc_id != null
+  vpc_id = var.existing_vpc_id != null ? var.existing_vpc_id : (local.postgres_vpc_id != null ? local.postgres_vpc_id : aws_vpc.todo_backend_api[0].id)
+  public_subnet_ids = var.public_subnet_ids != null ? var.public_subnet_ids : (local.postgres_public_subnet_ids != null ? local.postgres_public_subnet_ids : [for subnet in aws_subnet.public : subnet.id])
+  database_security_group_id = var.database_security_group_id != null ? var.database_security_group_id : local.postgres_db_security_group_id
   container_image = coalesce(var.container_image, "${aws_ecr_repository.todo_backend_api.repository_url}:latest")
 }
 
 resource "aws_vpc" "todo_backend_api" {
+  count               = local.use_existing_vpc ? 0 : 1
   cidr_block           = var.vpc_cidr
   enable_dns_hostnames = true
   enable_dns_support   = true
@@ -52,7 +69,8 @@ resource "aws_vpc" "todo_backend_api" {
 }
 
 resource "aws_internet_gateway" "todo_backend_api" {
-  vpc_id = aws_vpc.todo_backend_api.id
+  count  = local.use_existing_vpc ? 0 : 1
+  vpc_id = aws_vpc.todo_backend_api[0].id
 
   tags = {
     Name = "${var.stack_name}-api-igw"
@@ -60,9 +78,9 @@ resource "aws_internet_gateway" "todo_backend_api" {
 }
 
 resource "aws_subnet" "public" {
-  for_each = local.subnet_azs
+  for_each = local.use_existing_vpc ? {} : local.subnet_azs
 
-  vpc_id                  = aws_vpc.todo_backend_api.id
+  vpc_id                  = aws_vpc.todo_backend_api[0].id
   cidr_block              = cidrsubnet(var.vpc_cidr, 4, tonumber(each.key))
   availability_zone       = each.value
   map_public_ip_on_launch = true
@@ -73,11 +91,12 @@ resource "aws_subnet" "public" {
 }
 
 resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.todo_backend_api.id
+  count  = local.use_existing_vpc ? 0 : 1
+  vpc_id = aws_vpc.todo_backend_api[0].id
 
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.todo_backend_api.id
+    gateway_id = aws_internet_gateway.todo_backend_api[0].id
   }
 
   tags = {
@@ -86,15 +105,15 @@ resource "aws_route_table" "public" {
 }
 
 resource "aws_route_table_association" "public" {
-  for_each       = aws_subnet.public
+  for_each       = local.use_existing_vpc ? {} : aws_subnet.public
   subnet_id      = each.value.id
-  route_table_id = aws_route_table.public.id
+  route_table_id = aws_route_table.public[0].id
 }
 
 resource "aws_security_group" "alb" {
   name        = "${var.stack_name}-api-alb"
   description = "Ingress control for the Todo Backend public load balancer."
-  vpc_id      = aws_vpc.todo_backend_api.id
+  vpc_id      = local.vpc_id
 
   egress {
     from_port   = 0
@@ -122,7 +141,7 @@ resource "aws_security_group_rule" "alb_ingress" {
 resource "aws_security_group" "service" {
   name        = "${var.stack_name}-api-service"
   description = "Constrains inbound traffic to ECS tasks from the ALB."
-  vpc_id      = aws_vpc.todo_backend_api.id
+  vpc_id      = local.vpc_id
 
   ingress {
     description     = "Traffic from ALB"
@@ -145,13 +164,13 @@ resource "aws_security_group" "service" {
 }
 
 resource "aws_security_group_rule" "db_ingress_from_service" {
-  count                    = var.database_security_group_id == null ? 0 : 1
+  count                    = local.database_security_group_id == null ? 0 : 1
   type                     = "ingress"
   description              = "Allow Postgres from ECS service tasks."
   from_port                = var.database_port
   to_port                  = var.database_port
   protocol                 = "tcp"
-  security_group_id        = var.database_security_group_id
+  security_group_id        = local.database_security_group_id
   source_security_group_id = aws_security_group.service.id
 }
 
@@ -160,7 +179,14 @@ resource "aws_lb" "todo_backend_api" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-  subnets            = [for subnet in aws_subnet.public : subnet.id]
+  subnets            = local.public_subnet_ids
+
+  lifecycle {
+    precondition {
+      condition     = length(local.public_subnet_ids) > 0
+      error_message = "public_subnet_ids must be set when reusing an existing VPC."
+    }
+  }
 
   tags = {
     Name = "${var.stack_name}-api"
@@ -172,7 +198,7 @@ resource "aws_lb_target_group" "todo_backend_api" {
   port        = var.container_port
   protocol    = "HTTP"
   target_type = "ip"
-  vpc_id      = aws_vpc.todo_backend_api.id
+  vpc_id      = local.vpc_id
 
   health_check {
     enabled             = true
@@ -409,7 +435,7 @@ resource "aws_ecs_service" "todo_backend_api" {
   platform_version = "LATEST"
 
   network_configuration {
-    subnets          = [for subnet in aws_subnet.public : subnet.id]
+    subnets          = local.public_subnet_ids
     security_groups  = [aws_security_group.service.id]
     assign_public_ip = true
   }
