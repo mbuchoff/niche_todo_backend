@@ -47,18 +47,18 @@ locals {
   subnet_azs = {
     for idx, az in slice(data.aws_availability_zones.available.names, 0, local.az_count) : idx => az
   }
-  postgres_vpc_id = var.postgres_state_path == null ? null : try(data.terraform_remote_state.postgres[0].outputs.vpc_id, null)
-  postgres_public_subnet_ids = var.postgres_state_path == null ? null : try(data.terraform_remote_state.postgres[0].outputs.public_subnet_ids, null)
+  postgres_vpc_id               = var.postgres_state_path == null ? null : try(data.terraform_remote_state.postgres[0].outputs.vpc_id, null)
+  postgres_public_subnet_ids    = var.postgres_state_path == null ? null : try(data.terraform_remote_state.postgres[0].outputs.public_subnet_ids, null)
   postgres_db_security_group_id = var.postgres_state_path == null ? null : try(data.terraform_remote_state.postgres[0].outputs.db_security_group_id, null)
-  use_existing_vpc = var.existing_vpc_id != null || local.postgres_vpc_id != null
-  vpc_id = var.existing_vpc_id != null ? var.existing_vpc_id : (local.postgres_vpc_id != null ? local.postgres_vpc_id : aws_vpc.todo_backend_api[0].id)
-  public_subnet_ids = var.public_subnet_ids != null ? var.public_subnet_ids : (local.postgres_public_subnet_ids != null ? local.postgres_public_subnet_ids : [for subnet in aws_subnet.public : subnet.id])
-  database_security_group_id = var.database_security_group_id != null ? var.database_security_group_id : local.postgres_db_security_group_id
-  container_image = coalesce(var.container_image, "${aws_ecr_repository.todo_backend_api.repository_url}:latest")
+  use_existing_vpc              = var.existing_vpc_id != null || local.postgres_vpc_id != null
+  vpc_id                        = var.existing_vpc_id != null ? var.existing_vpc_id : (local.postgres_vpc_id != null ? local.postgres_vpc_id : aws_vpc.todo_backend_api[0].id)
+  public_subnet_ids             = var.public_subnet_ids != null ? var.public_subnet_ids : (local.postgres_public_subnet_ids != null ? local.postgres_public_subnet_ids : [for subnet in aws_subnet.public : subnet.id])
+  database_security_group_id    = var.database_security_group_id != null ? var.database_security_group_id : local.postgres_db_security_group_id
+  container_image               = coalesce(var.container_image, "${aws_ecr_repository.todo_backend_api.repository_url}:latest")
 }
 
 resource "aws_vpc" "todo_backend_api" {
-  count               = local.use_existing_vpc ? 0 : 1
+  count                = local.use_existing_vpc ? 0 : 1
   cidr_block           = var.vpc_cidr
   enable_dns_hostnames = true
   enable_dns_support   = true
@@ -239,12 +239,12 @@ resource "aws_cloudfront_distribution" "todo_backend_api" {
   }
 
   default_cache_behavior {
-    target_origin_id       = "${var.stack_name}-api-alb"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"]
-    cached_methods         = ["GET", "HEAD", "OPTIONS"]
-    compress               = true
-    cache_policy_id        = data.aws_cloudfront_cache_policy.disabled.id
+    target_origin_id         = "${var.stack_name}-api-alb"
+    viewer_protocol_policy   = "redirect-to-https"
+    allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"]
+    cached_methods           = ["GET", "HEAD", "OPTIONS"]
+    compress                 = true
+    cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer.id
   }
 
@@ -321,8 +321,8 @@ resource "aws_iam_role_policy" "execution_parameter_access" {
         ]
       },
       {
-        Effect = "Allow"
-        Action = "kms:Decrypt"
+        Effect   = "Allow"
+        Action   = "kms:Decrypt"
         Resource = "arn:${data.aws_partition.current.partition}:kms:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alias/aws/ssm"
       }
     ]
@@ -365,8 +365,8 @@ resource "aws_iam_role_policy" "task_parameter_access" {
         ]
       },
       {
-        Effect = "Allow"
-        Action = "kms:Decrypt"
+        Effect   = "Allow"
+        Action   = "kms:Decrypt"
         Resource = "arn:${data.aws_partition.current.partition}:kms:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alias/aws/ssm"
       }
     ]
@@ -427,11 +427,11 @@ resource "aws_ecs_task_definition" "todo_backend_api" {
 }
 
 resource "aws_ecs_service" "todo_backend_api" {
-  name            = "${var.stack_name}-api"
-  cluster         = aws_ecs_cluster.todo_backend_api.id
-  task_definition = aws_ecs_task_definition.todo_backend_api.arn
-  desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+  name             = "${var.stack_name}-api"
+  cluster          = aws_ecs_cluster.todo_backend_api.id
+  task_definition  = aws_ecs_task_definition.todo_backend_api.arn
+  desired_count    = var.desired_count
+  launch_type      = "FARGATE"
   platform_version = "LATEST"
 
   network_configuration {
