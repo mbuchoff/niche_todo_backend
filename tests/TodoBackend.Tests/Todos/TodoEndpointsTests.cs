@@ -172,6 +172,116 @@ public sealed class TodoEndpointsTests
     }
 
     [Fact]
+    public async Task DeleteTodo_CascadesToChildren()
+    {
+        await using var factory = new TestAppFactory();
+        using var client = factory.CreateClient();
+        var accessToken = await AuthenticateAsync(factory, client);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        var parent = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Parent", null, null, false, null)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+        var child = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Child", null, null, false, parent!.Id)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+
+        Assert.NotNull(parent);
+        Assert.NotNull(child);
+
+        var deleteResponse = await client.DeleteAsync($"/todos/{parent!.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+
+        var listResponse = await client.GetAsync("/todos");
+        var list = await listResponse.Content.ReadFromJsonAsync<List<TodoResponse>>();
+        Assert.NotNull(list);
+        Assert.Empty(list!);
+    }
+
+    [Fact]
+    public async Task DeleteTodo_RecomputesParentCompletion()
+    {
+        await using var factory = new TestAppFactory();
+        using var client = factory.CreateClient();
+        var accessToken = await AuthenticateAsync(factory, client);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        var parent = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Parent", null, null, false, null)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+        var childA = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Child A", null, null, true, parent!.Id)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+        var childB = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Child B", null, null, false, parent!.Id)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+
+        Assert.NotNull(parent);
+        Assert.NotNull(childA);
+        Assert.NotNull(childB);
+
+        var beforeDelete = await (await client.GetAsync("/todos"))
+            .Content.ReadFromJsonAsync<List<TodoResponse>>();
+        Assert.NotNull(beforeDelete);
+        Assert.False(beforeDelete!.Single(item => item.Id == parent!.Id).IsCompleted);
+
+        var deleteResponse = await client.DeleteAsync($"/todos/{childB!.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+
+        var afterDelete = await (await client.GetAsync("/todos"))
+            .Content.ReadFromJsonAsync<List<TodoResponse>>();
+        Assert.NotNull(afterDelete);
+        Assert.True(afterDelete!.Single(item => item.Id == parent.Id).IsCompleted);
+    }
+
+    [Fact]
+    public async Task GetTodos_OrdersParentsBeforeChildren()
+    {
+        await using var factory = new TestAppFactory();
+        using var client = factory.CreateClient();
+        var accessToken = await AuthenticateAsync(factory, client);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        var parentA = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Parent A", null, null, false, null)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+        var parentB = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Parent B", null, null, false, null)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+        var childA = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Child A", null, null, false, parentA!.Id)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+        var childB = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Child B", null, null, false, parentB!.Id)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+
+        Assert.NotNull(parentA);
+        Assert.NotNull(parentB);
+        Assert.NotNull(childA);
+        Assert.NotNull(childB);
+
+        var list = await (await client.GetAsync("/todos"))
+            .Content.ReadFromJsonAsync<List<TodoResponse>>();
+
+        Assert.NotNull(list);
+        Assert.Equal(
+            ["Parent A", "Child A", "Parent B", "Child B"],
+            list!.Select(item => item.Title).ToList());
+    }
+
+    [Fact]
     public async Task ReorderTodos_PersistsOrder()
     {
         await using var factory = new TestAppFactory();

@@ -303,14 +303,12 @@ todosGroup.MapGet("", async Task<IResult> (
         return Results.Unauthorized();
     }
 
-    var ordered = await db.Todos
+    var todos = await db.Todos
         .AsNoTracking()
         .Where(todo => todo.UserId == userId)
-        .OrderBy(todo => todo.ParentId.HasValue ? 1 : 0)
-        .ThenBy(todo => todo.ParentId)
-        .ThenBy(todo => todo.SortOrder)
         .ToListAsync(cancellationToken);
 
+    var ordered = OrderTodosForHierarchy(todos);
     return Results.Ok(ordered.Select(ToTodoResponse).ToList());
 })
 .WithName("GetTodos");
@@ -449,7 +447,40 @@ todosGroup.MapDelete("/{id:guid}", async Task<IResult> (
         return Results.NotFound();
     }
 
+    var todos = await db.Todos
+        .Where(item => item.UserId == userId)
+        .ToListAsync(cancellationToken);
+
+    var childrenLookup = todos
+        .Where(item => item.ParentId.HasValue)
+        .GroupBy(item => item.ParentId!.Value)
+        .ToDictionary(group => group.Key, group => group.ToList());
+
+    var deletedIds = new HashSet<Guid>();
+    var stack = new Stack<Guid>();
+    stack.Push(todo.Id);
+    while (stack.Count > 0)
+    {
+        var currentId = stack.Pop();
+        if (!deletedIds.Add(currentId))
+        {
+            continue;
+        }
+
+        if (!childrenLookup.TryGetValue(currentId, out var children))
+        {
+            continue;
+        }
+
+        foreach (var child in children)
+        {
+            stack.Push(child.Id);
+        }
+    }
+
+    todos.RemoveAll(item => deletedIds.Contains(item.Id));
     db.Todos.Remove(todo);
+    RecomputeCompletionFromChildren(todos);
     await db.SaveChangesAsync(cancellationToken);
     return Results.NoContent();
 })
@@ -553,7 +584,14 @@ todosGroup.MapPut("/reorder", async Task<IResult> (
     await db.SaveChangesAsync(cancellationToken);
     return Results.NoContent();
 })
-.WithName("ReorderTodos");
+.WithName("ReorderTodos")
+.WithOpenApi(operation =>
+{
+    operation.Summary = "Reorder and optionally reparent todos.";
+    operation.Description = "Breaking change: the request now requires an items list " +
+                            "containing todo id, parentId, and sortOrder; orderedIds is no longer supported.";
+    return operation;
+});
 
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }))
     .WithName("Healthz");
@@ -598,71 +636,22 @@ static async Task ApplyCompletionRulesAsync(
     TodoItem updatedTodo,
     CancellationToken cancellationToken)
 {
-    var relevantTodos = new Dictionary<Guid, TodoItem>
+    var todos = await db.Todos
+        .Where(todo => todo.UserId == userId)
+        .ToListAsync(cancellationToken);
+
+    if (todos.All(todo => todo.Id != updatedTodo.Id))
     {
-        [updatedTodo.Id] = updatedTodo
-    };
-
-    var ancestorIds = new List<Guid>();
-    var parentId = updatedTodo.ParentId;
-    while (parentId.HasValue)
-    {
-        var parent = await db.Todos.SingleOrDefaultAsync(
-            todo => todo.UserId == userId && todo.Id == parentId.Value,
-            cancellationToken);
-        if (parent is null)
-        {
-            break;
-        }
-
-        if (relevantTodos.TryAdd(parent.Id, parent))
-        {
-            ancestorIds.Add(parent.Id);
-        }
-
-        parentId = parent.ParentId;
+        todos.Add(updatedTodo);
     }
 
-    var pendingParentIds = new List<Guid> { updatedTodo.Id };
-    while (pendingParentIds.Count > 0)
-    {
-        var children = await db.Todos
-            .Where(todo => todo.UserId == userId &&
-                           todo.ParentId.HasValue &&
-                           pendingParentIds.Contains(todo.ParentId.Value))
-            .ToListAsync(cancellationToken);
-
-        pendingParentIds.Clear();
-        foreach (var child in children)
-        {
-            if (relevantTodos.TryAdd(child.Id, child))
-            {
-                pendingParentIds.Add(child.Id);
-            }
-        }
-    }
-
-    if (ancestorIds.Count > 0)
-    {
-        var siblings = await db.Todos
-            .Where(todo => todo.UserId == userId &&
-                           todo.ParentId.HasValue &&
-                           ancestorIds.Contains(todo.ParentId.Value))
-            .ToListAsync(cancellationToken);
-
-        foreach (var sibling in siblings)
-        {
-            relevantTodos.TryAdd(sibling.Id, sibling);
-        }
-    }
-
-    var lookup = relevantTodos;
+    var lookup = todos.ToDictionary(todo => todo.Id, todo => todo);
     if (!lookup.TryGetValue(updatedTodo.Id, out var resolvedTodo))
     {
         return;
     }
 
-    var childrenLookup = relevantTodos.Values
+    var childrenLookup = todos
         .Where(todo => todo.ParentId.HasValue)
         .GroupBy(todo => todo.ParentId!.Value)
         .ToDictionary(group => group.Key, group => group.ToList());
@@ -675,6 +664,80 @@ static async Task ApplyCompletionRulesAsync(
     else
     {
         MarkAncestorsIncomplete(resolvedTodo, lookup);
+    }
+}
+
+static IReadOnlyList<TodoItem> OrderTodosForHierarchy(IReadOnlyList<TodoItem> todos)
+{
+    if (todos.Count == 0)
+    {
+        return Array.Empty<TodoItem>();
+    }
+
+    var lookup = todos.ToDictionary(todo => todo.Id, todo => todo);
+    var childrenLookup = todos
+        .Where(todo => todo.ParentId.HasValue)
+        .GroupBy(todo => todo.ParentId!.Value)
+        .ToDictionary(
+            group => group.Key,
+            group => group.OrderBy(todo => todo.SortOrder).ThenBy(todo => todo.Id).ToList());
+
+    var roots = todos
+        .Where(todo => !todo.ParentId.HasValue || !lookup.ContainsKey(todo.ParentId.Value))
+        .OrderBy(todo => todo.SortOrder)
+        .ThenBy(todo => todo.Id)
+        .ToList();
+
+    var ordered = new List<TodoItem>(todos.Count);
+    var visited = new HashSet<Guid>();
+
+    foreach (var root in roots)
+    {
+        AppendPreOrder(root, ordered, visited, childrenLookup);
+    }
+
+    if (visited.Count != todos.Count)
+    {
+        foreach (var todo in todos.OrderBy(todo => todo.SortOrder).ThenBy(todo => todo.Id))
+        {
+            if (visited.Add(todo.Id))
+            {
+                ordered.Add(todo);
+            }
+        }
+    }
+
+    return ordered;
+}
+
+static void AppendPreOrder(
+    TodoItem root,
+    ICollection<TodoItem> ordered,
+    ISet<Guid> visited,
+    IReadOnlyDictionary<Guid, List<TodoItem>> childrenLookup)
+{
+    var stack = new Stack<TodoItem>();
+    stack.Push(root);
+
+    while (stack.Count > 0)
+    {
+        var current = stack.Pop();
+        if (!visited.Add(current.Id))
+        {
+            continue;
+        }
+
+        ordered.Add(current);
+
+        if (!childrenLookup.TryGetValue(current.Id, out var children))
+        {
+            continue;
+        }
+
+        for (var index = children.Count - 1; index >= 0; index -= 1)
+        {
+            stack.Push(children[index]);
+        }
     }
 }
 
