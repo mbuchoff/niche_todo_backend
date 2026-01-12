@@ -348,6 +348,56 @@ public sealed class TodoEndpointsTests
         Assert.Equal(0, movedChild.SortOrder);
     }
 
+    [Fact]
+    public async Task ReorderTodos_RecomputesCompletionFromChildren()
+    {
+        await using var factory = new TestAppFactory();
+        using var client = factory.CreateClient();
+        var accessToken = await AuthenticateAsync(factory, client);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        var parentA = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Parent A", null, null, true, null)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+        var parentB = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Parent B", null, null, false, null)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+        var childA = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Child A", null, null, false, parentB!.Id)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+        var childB = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Child B", null, null, true, parentB.Id)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+
+        Assert.NotNull(parentA);
+        Assert.NotNull(parentB);
+        Assert.NotNull(childA);
+        Assert.NotNull(childB);
+
+        var reorderResponse = await client.PutAsJsonAsync(
+            "/todos/reorder",
+            new ReorderTodosRequest(new List<ReorderTodoItem>
+            {
+                new(parentA!.Id, null, 0),
+                new(parentB!.Id, null, 1),
+                new(childA!.Id, parentA.Id, 0),
+                new(childB!.Id, parentB.Id, 0)
+            })
+        );
+        Assert.Equal(HttpStatusCode.NoContent, reorderResponse.StatusCode);
+
+        var list = await (await client.GetAsync("/todos"))
+            .Content.ReadFromJsonAsync<List<TodoResponse>>();
+        Assert.NotNull(list);
+        Assert.False(list!.Single(item => item.Id == parentA.Id).IsCompleted);
+        Assert.True(list.Single(item => item.Id == parentB.Id).IsCompleted);
+    }
+
     private static async Task<string> AuthenticateAsync(TestAppFactory factory, HttpClient client)
     {
         factory.GoogleTokenVerifier.Register("token-todos", new GoogleUserInfo("sub-todo", "todo@example.com", "Todo User", true, null));

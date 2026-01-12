@@ -552,6 +552,7 @@ todosGroup.MapPut("/reorder", async Task<IResult> (
         todo.SortOrder = item.SortOrder;
     }
 
+    RecomputeCompletionFromChildren(todos);
     await db.SaveChangesAsync(cancellationToken);
     return Results.NoContent();
 })
@@ -628,6 +629,64 @@ static async Task ApplyCompletionRulesAsync(
     else
     {
         MarkAncestorsIncomplete(resolvedTodo, lookup);
+    }
+}
+
+static void RecomputeCompletionFromChildren(IReadOnlyList<TodoItem> todos)
+{
+    var childrenLookup = todos
+        .Where(todo => todo.ParentId.HasValue)
+        .GroupBy(todo => todo.ParentId!.Value)
+        .ToDictionary(group => group.Key, group => group.ToList());
+
+    var visited = new HashSet<Guid>();
+    var postOrder = new List<TodoItem>(todos.Count);
+
+    foreach (var todo in todos)
+    {
+        if (visited.Contains(todo.Id))
+        {
+            continue;
+        }
+
+        var stack = new Stack<(TodoItem Item, bool Expanded)>();
+        stack.Push((todo, false));
+
+        while (stack.Count > 0)
+        {
+            var (current, expanded) = stack.Pop();
+            if (expanded)
+            {
+                postOrder.Add(current);
+                continue;
+            }
+
+            if (!visited.Add(current.Id))
+            {
+                continue;
+            }
+
+            stack.Push((current, true));
+
+            if (childrenLookup.TryGetValue(current.Id, out var children))
+            {
+                foreach (var child in children)
+                {
+                    if (!visited.Contains(child.Id))
+                    {
+                        stack.Push((child, false));
+                    }
+                }
+            }
+        }
+    }
+
+    foreach (var todo in postOrder)
+    {
+        if (childrenLookup.TryGetValue(todo.Id, out var children) && children.Count > 0)
+        {
+            todo.IsCompleted = children.All(child => child.IsCompleted);
+        }
     }
 }
 
