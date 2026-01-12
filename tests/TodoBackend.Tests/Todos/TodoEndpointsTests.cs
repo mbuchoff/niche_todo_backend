@@ -35,7 +35,8 @@ public sealed class TodoEndpointsTests
             "Write tests",
             new DateTimeOffset(2025, 3, 1, 10, 0, 0, TimeSpan.FromHours(-5)),
             new DateTimeOffset(2025, 3, 1, 12, 0, 0, TimeSpan.FromHours(-5)),
-            false
+            false,
+            null
         );
 
         var createResponse = await client.PostAsJsonAsync("/todos", request);
@@ -71,7 +72,7 @@ public sealed class TodoEndpointsTests
         var longTitle = new string('a', 257);
         var response = await client.PostAsJsonAsync(
             "/todos",
-            new CreateTodoRequest(longTitle, null, null, false)
+            new CreateTodoRequest(longTitle, null, null, false, null)
         );
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -92,7 +93,7 @@ public sealed class TodoEndpointsTests
 
         var createResponse = await client.PostAsJsonAsync(
             "/todos",
-            new CreateTodoRequest("Initial", null, null, false)
+            new CreateTodoRequest("Initial", null, null, false, null)
         );
         var created = await createResponse.Content.ReadFromJsonAsync<TodoResponse>();
         Assert.NotNull(created);
@@ -126,7 +127,7 @@ public sealed class TodoEndpointsTests
 
         var createResponse = await client.PostAsJsonAsync(
             "/todos",
-            new CreateTodoRequest("Initial", null, null, false)
+            new CreateTodoRequest("Initial", null, null, false, null)
         );
         var created = await createResponse.Content.ReadFromJsonAsync<TodoResponse>();
         Assert.NotNull(created);
@@ -155,7 +156,7 @@ public sealed class TodoEndpointsTests
 
         var createResponse = await client.PostAsJsonAsync(
             "/todos",
-            new CreateTodoRequest("Remove me", null, null, false)
+            new CreateTodoRequest("Remove me", null, null, false, null)
         );
         var created = await createResponse.Content.ReadFromJsonAsync<TodoResponse>();
         Assert.NotNull(created);
@@ -180,11 +181,11 @@ public sealed class TodoEndpointsTests
 
         var first = await (await client.PostAsJsonAsync(
             "/todos",
-            new CreateTodoRequest("First", null, null, false)
+            new CreateTodoRequest("First", null, null, false, null)
         )).Content.ReadFromJsonAsync<TodoResponse>();
         var second = await (await client.PostAsJsonAsync(
             "/todos",
-            new CreateTodoRequest("Second", null, null, false)
+            new CreateTodoRequest("Second", null, null, false, null)
         )).Content.ReadFromJsonAsync<TodoResponse>();
 
         Assert.NotNull(first);
@@ -192,14 +193,159 @@ public sealed class TodoEndpointsTests
 
         var reorderResponse = await client.PutAsJsonAsync(
             "/todos/reorder",
-            new ReorderTodosRequest(new List<Guid> { second!.Id, first!.Id })
+            new ReorderTodosRequest(new List<ReorderTodoItem>
+            {
+                new(second!.Id, null, 0),
+                new(first!.Id, null, 1)
+            })
         );
         Assert.Equal(HttpStatusCode.NoContent, reorderResponse.StatusCode);
 
         var listResponse = await client.GetAsync("/todos");
         var list = await listResponse.Content.ReadFromJsonAsync<List<TodoResponse>>();
         Assert.NotNull(list);
-        Assert.Equal(new[] { second.Id, first.Id }, list!.Select(item => item.Id));
+        Assert.Equal(new[] { second.Id, first.Id }, list!.OrderBy(item => item.SortOrder).Select(item => item.Id));
+    }
+
+    [Fact]
+    public async Task CreateTodo_WithParentId_AssignsParent()
+    {
+        await using var factory = new TestAppFactory();
+        using var client = factory.CreateClient();
+        var accessToken = await AuthenticateAsync(factory, client);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        var parent = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Parent", null, null, false, null)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+
+        Assert.NotNull(parent);
+
+        var childResponse = await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Child", null, null, false, parent!.Id)
+        );
+
+        Assert.Equal(HttpStatusCode.Created, childResponse.StatusCode);
+
+        var child = await childResponse.Content.ReadFromJsonAsync<TodoResponse>();
+        Assert.NotNull(child);
+        Assert.Equal(parent.Id, child!.ParentId);
+
+        var listResponse = await client.GetAsync("/todos");
+        var list = await listResponse.Content.ReadFromJsonAsync<List<TodoResponse>>();
+        Assert.NotNull(list);
+        Assert.Contains(list!, item => item.Id == child.Id && item.ParentId == parent.Id);
+    }
+
+    [Fact]
+    public async Task UpdateTodo_CompletionCascadesAcrossHierarchy()
+    {
+        await using var factory = new TestAppFactory();
+        using var client = factory.CreateClient();
+        var accessToken = await AuthenticateAsync(factory, client);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        var parent = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Parent", null, null, false, null)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+        var childA = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Child A", null, null, false, parent!.Id)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+        var childB = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Child B", null, null, false, parent!.Id)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+
+        Assert.NotNull(childA);
+        Assert.NotNull(childB);
+
+        var completeParent = await client.PutAsJsonAsync(
+            $"/todos/{parent!.Id}",
+            new UpdateTodoRequest("Parent", null, null, true)
+        );
+        Assert.Equal(HttpStatusCode.OK, completeParent.StatusCode);
+
+        var afterComplete = await (await client.GetAsync("/todos"))
+            .Content.ReadFromJsonAsync<List<TodoResponse>>();
+        Assert.NotNull(afterComplete);
+        Assert.True(afterComplete!.Single(item => item.Id == parent.Id).IsCompleted);
+        Assert.True(afterComplete.Single(item => item.Id == childA!.Id).IsCompleted);
+        Assert.True(afterComplete.Single(item => item.Id == childB!.Id).IsCompleted);
+
+        var uncompleteChild = await client.PutAsJsonAsync(
+            $"/todos/{childA!.Id}",
+            new UpdateTodoRequest("Child A", null, null, false)
+        );
+        Assert.Equal(HttpStatusCode.OK, uncompleteChild.StatusCode);
+
+        var afterUncomplete = await (await client.GetAsync("/todos"))
+            .Content.ReadFromJsonAsync<List<TodoResponse>>();
+        Assert.NotNull(afterUncomplete);
+        Assert.False(afterUncomplete!.Single(item => item.Id == parent.Id).IsCompleted);
+        Assert.False(afterUncomplete.Single(item => item.Id == childA.Id).IsCompleted);
+        Assert.True(afterUncomplete.Single(item => item.Id == childB!.Id).IsCompleted);
+
+        var completeChild = await client.PutAsJsonAsync(
+            $"/todos/{childA.Id}",
+            new UpdateTodoRequest("Child A", null, null, true)
+        );
+        Assert.Equal(HttpStatusCode.OK, completeChild.StatusCode);
+
+        var afterAllComplete = await (await client.GetAsync("/todos"))
+            .Content.ReadFromJsonAsync<List<TodoResponse>>();
+        Assert.NotNull(afterAllComplete);
+        Assert.True(afterAllComplete!.Single(item => item.Id == parent.Id).IsCompleted);
+    }
+
+    [Fact]
+    public async Task ReorderTodos_AllowsReparenting()
+    {
+        await using var factory = new TestAppFactory();
+        using var client = factory.CreateClient();
+        var accessToken = await AuthenticateAsync(factory, client);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        var parentA = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Parent A", null, null, false, null)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+        var parentB = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Parent B", null, null, false, null)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+        var child = await (await client.PostAsJsonAsync(
+            "/todos",
+            new CreateTodoRequest("Child", null, null, false, parentA!.Id)
+        )).Content.ReadFromJsonAsync<TodoResponse>();
+
+        Assert.NotNull(parentA);
+        Assert.NotNull(parentB);
+        Assert.NotNull(child);
+
+        var reorderResponse = await client.PutAsJsonAsync(
+            "/todos/reorder",
+            new ReorderTodosRequest(new List<ReorderTodoItem>
+            {
+                new(parentA!.Id, null, 0),
+                new(parentB!.Id, null, 1),
+                new(child!.Id, parentB.Id, 0)
+            })
+        );
+        Assert.Equal(HttpStatusCode.NoContent, reorderResponse.StatusCode);
+
+        var list = await (await client.GetAsync("/todos"))
+            .Content.ReadFromJsonAsync<List<TodoResponse>>();
+        Assert.NotNull(list);
+        var movedChild = list!.Single(item => item.Id == child.Id);
+        Assert.Equal(parentB.Id, movedChild.ParentId);
+        Assert.Equal(0, movedChild.SortOrder);
     }
 
     private static async Task<string> AuthenticateAsync(TestAppFactory factory, HttpClient client)
@@ -218,7 +364,8 @@ public sealed class TodoEndpointsTests
         string Title,
         DateTimeOffset? StartDateTimeUtc,
         DateTimeOffset? EndDateTimeUtc,
-        bool IsCompleted
+        bool IsCompleted,
+        Guid? ParentId
     );
     private sealed record UpdateTodoRequest(
         string Title,
@@ -226,13 +373,17 @@ public sealed class TodoEndpointsTests
         DateTimeOffset? EndDateTimeUtc,
         bool IsCompleted
     );
-    private sealed record ReorderTodosRequest(List<Guid> OrderedIds);
     private sealed record TodoResponse(
         Guid Id,
         string Title,
         DateTimeOffset? StartDateTimeUtc,
         DateTimeOffset? EndDateTimeUtc,
         bool IsCompleted,
-        int SortOrder
+        int SortOrder,
+        Guid? ParentId
     );
+
+    private sealed record ReorderTodoItem(Guid Id, Guid? ParentId, int SortOrder);
+
+    private sealed record ReorderTodosRequest(List<ReorderTodoItem> Items);
 }

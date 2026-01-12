@@ -7,7 +7,8 @@ public sealed record CreateTodoRequest(
     string Title,
     DateTimeOffset? StartDateTimeUtc,
     DateTimeOffset? EndDateTimeUtc,
-    bool IsCompleted
+    bool IsCompleted,
+    Guid? ParentId
 );
 
 public sealed record UpdateTodoRequest(
@@ -18,7 +19,7 @@ public sealed record UpdateTodoRequest(
 );
 
 public sealed record ReorderTodosRequest(
-    IReadOnlyList<Guid> OrderedIds
+    IReadOnlyList<ReorderTodoItem> Items
 );
 
 public sealed record TodoResponse(
@@ -27,5 +28,12 @@ public sealed record TodoResponse(
     DateTimeOffset? StartDateTimeUtc,
     DateTimeOffset? EndDateTimeUtc,
     bool IsCompleted,
+    int SortOrder,
+    Guid? ParentId
+);
+
+public sealed record ReorderTodoItem(
+    Guid Id,
+    Guid? ParentId,
     int SortOrder
 );

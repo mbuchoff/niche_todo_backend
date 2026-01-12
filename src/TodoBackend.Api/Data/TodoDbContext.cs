@@ -50,15 +50,20 @@ public sealed class TodoDbContext(DbContextOptions<TodoDbContext> options) : DbC
         {
             builder.ToTable("todos");
             builder.HasKey(todo => todo.Id);
-            builder.HasIndex(todo => new { todo.UserId, todo.SortOrder });
+            builder.HasIndex(todo => new { todo.UserId, todo.ParentId, todo.SortOrder });
             builder.Property(todo => todo.Title).IsRequired().HasMaxLength(256);
             builder.Property(todo => todo.SortOrder).IsRequired();
             builder.Property(todo => todo.StartDateTimeUtc);
             builder.Property(todo => todo.EndDateTimeUtc);
             builder.Property(todo => todo.IsCompleted).IsRequired();
+            builder.Property(todo => todo.ParentId);
             builder.HasOne(todo => todo.User)
                 .WithMany(user => user.Todos)
                 .HasForeignKey(todo => todo.UserId);
+            builder.HasOne(todo => todo.Parent)
+                .WithMany(todo => todo.Children)
+                .HasForeignKey(todo => todo.ParentId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
