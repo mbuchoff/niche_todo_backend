@@ -303,16 +303,13 @@ todosGroup.MapGet("", async Task<IResult> (
         return Results.Unauthorized();
     }
 
-    var todos = await db.Todos
+    var ordered = await db.Todos
         .AsNoTracking()
         .Where(todo => todo.UserId == userId)
-        .ToListAsync(cancellationToken);
-
-    var ordered = todos
         .OrderBy(todo => todo.ParentId.HasValue ? 1 : 0)
         .ThenBy(todo => todo.ParentId)
         .ThenBy(todo => todo.SortOrder)
-        .ToList();
+        .ToListAsync(cancellationToken);
 
     return Results.Ok(ordered.Select(ToTodoResponse).ToList());
 })
@@ -601,22 +598,71 @@ static async Task ApplyCompletionRulesAsync(
     TodoItem updatedTodo,
     CancellationToken cancellationToken)
 {
-    var todos = await db.Todos
-        .Where(todo => todo.UserId == userId)
-        .ToListAsync(cancellationToken);
-
-    if (todos.All(todo => todo.Id != updatedTodo.Id))
+    var relevantTodos = new Dictionary<Guid, TodoItem>
     {
-        todos.Add(updatedTodo);
+        [updatedTodo.Id] = updatedTodo
+    };
+
+    var ancestorIds = new List<Guid>();
+    var parentId = updatedTodo.ParentId;
+    while (parentId.HasValue)
+    {
+        var parent = await db.Todos.SingleOrDefaultAsync(
+            todo => todo.UserId == userId && todo.Id == parentId.Value,
+            cancellationToken);
+        if (parent is null)
+        {
+            break;
+        }
+
+        if (relevantTodos.TryAdd(parent.Id, parent))
+        {
+            ancestorIds.Add(parent.Id);
+        }
+
+        parentId = parent.ParentId;
     }
 
-    var lookup = todos.ToDictionary(todo => todo.Id, todo => todo);
+    var pendingParentIds = new List<Guid> { updatedTodo.Id };
+    while (pendingParentIds.Count > 0)
+    {
+        var children = await db.Todos
+            .Where(todo => todo.UserId == userId &&
+                           todo.ParentId.HasValue &&
+                           pendingParentIds.Contains(todo.ParentId.Value))
+            .ToListAsync(cancellationToken);
+
+        pendingParentIds.Clear();
+        foreach (var child in children)
+        {
+            if (relevantTodos.TryAdd(child.Id, child))
+            {
+                pendingParentIds.Add(child.Id);
+            }
+        }
+    }
+
+    if (ancestorIds.Count > 0)
+    {
+        var siblings = await db.Todos
+            .Where(todo => todo.UserId == userId &&
+                           todo.ParentId.HasValue &&
+                           ancestorIds.Contains(todo.ParentId.Value))
+            .ToListAsync(cancellationToken);
+
+        foreach (var sibling in siblings)
+        {
+            relevantTodos.TryAdd(sibling.Id, sibling);
+        }
+    }
+
+    var lookup = relevantTodos;
     if (!lookup.TryGetValue(updatedTodo.Id, out var resolvedTodo))
     {
         return;
     }
 
-    var childrenLookup = todos
+    var childrenLookup = relevantTodos.Values
         .Where(todo => todo.ParentId.HasValue)
         .GroupBy(todo => todo.ParentId!.Value)
         .ToDictionary(group => group.Key, group => group.ToList());
