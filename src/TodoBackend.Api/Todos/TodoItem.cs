@@ -10,6 +10,9 @@ public sealed class TodoItem
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
     public User User { get; set; } = null!;
+    public Guid? ParentId { get; set; }
+    public TodoItem? Parent { get; set; }
+    public ICollection<TodoItem> Children { get; set; } = new List<TodoItem>();
     public string Title { get; set; } = string.Empty;
     public DateTimeOffset? StartDateTimeUtc { get; set; }
     public DateTimeOffset? EndDateTimeUtc { get; set; }
