@@ -82,6 +82,14 @@ if (!app.Environment.EnvironmentName.Equals("Testing", StringComparison.OrdinalI
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.MapGet("/sha", (IConfiguration configuration) =>
+{
+    var sha = configuration["GIT_SHA"];
+    return Results.Ok(new { sha });
+})
+.WithName("BuildSha")
+.WithOpenApi();
+
 app.MapPost("/auth/google", async Task<IResult> (
     [FromBody] GoogleAuthRequest request,
     IGoogleTokenVerifier verifier,
