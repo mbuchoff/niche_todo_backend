@@ -24,6 +24,7 @@ jobs:
     env:
       TF_VAR_database_connection_string: ${{ secrets.DATABASE_CONNECTION_STRING }}
       TF_VAR_git_sha: ${{ github.sha }}
+      TF_VAR_aws_profile: ""
     steps:
       - name: Checkout
         uses: actions/checkout@v4
