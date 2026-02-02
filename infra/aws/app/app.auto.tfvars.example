@@ -8,6 +8,7 @@ desired_count = 2
 task_cpu = 512
 task_memory = 1024
 container_image = "123456789012.dkr.ecr.us-east-1.amazonaws.com/todo-backend-api:latest"
+git_sha = "abcdef1234567890"
 database_connection_string = "Host=example.cluster-123456789012.us-east-1.rds.amazonaws.com;Port=5432;Database=tododb;Username=todoadmin;Password=change-me;Ssl Mode=Require"
 database_security_group_id = "sg-0123456789abcdef0"
 # Optional: reuse the VPC/subnets from the postgres stack state.

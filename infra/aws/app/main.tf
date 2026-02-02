@@ -55,6 +55,24 @@ locals {
   public_subnet_ids             = var.public_subnet_ids != null ? var.public_subnet_ids : (local.postgres_public_subnet_ids != null ? local.postgres_public_subnet_ids : [for subnet in aws_subnet.public : subnet.id])
   database_security_group_id    = var.database_security_group_id != null ? var.database_security_group_id : local.postgres_db_security_group_id
   container_image               = coalesce(var.container_image, "${aws_ecr_repository.todo_backend_api.repository_url}:latest")
+  api_environment = concat(
+    [
+      {
+        name  = "ASPNETCORE_ENVIRONMENT"
+        value = "Production"
+      },
+      {
+        name  = "ASPNETCORE_URLS"
+        value = "http://+:${var.container_port}"
+      }
+    ],
+    var.git_sha == null ? [] : [
+      {
+        name  = "GIT_SHA"
+        value = var.git_sha
+      }
+    ]
+  )
 }
 
 resource "aws_vpc" "todo_backend_api" {
@@ -398,16 +416,7 @@ resource "aws_ecs_task_definition" "todo_backend_api" {
           protocol      = "tcp"
         }
       ]
-      environment = [
-        {
-          name  = "ASPNETCORE_ENVIRONMENT"
-          value = "Production"
-        },
-        {
-          name  = "ASPNETCORE_URLS"
-          value = "http://+:${var.container_port}"
-        }
-      ]
+      environment = local.api_environment
       secrets = [
         {
           name      = "ConnectionStrings__Database"

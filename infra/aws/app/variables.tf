@@ -109,6 +109,12 @@ variable "container_image" {
   default     = null
 }
 
+variable "git_sha" {
+  description = "Optional Git commit SHA exposed to the API as GIT_SHA."
+  type        = string
+  default     = null
+}
+
 variable "database_connection_string" {
   description = "Connection string injected into the API container."
   type        = string

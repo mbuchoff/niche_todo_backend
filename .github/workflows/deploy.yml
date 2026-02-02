@@ -23,6 +23,7 @@ jobs:
       id-token: write
     env:
       TF_VAR_database_connection_string: ${{ secrets.DATABASE_CONNECTION_STRING }}
+      TF_VAR_git_sha: ${{ github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,6 +32,24 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install OpenTofu
+        if: env.ACT != 'true'
+        run: |
+          set -euo pipefail
+          version=$(python - <<'PY'
+          import json
+          import urllib.request
+          with urllib.request.urlopen("https://api.github.com/repos/opentofu/opentofu/releases/latest") as response:
+              data = json.load(response)
+          print(data["tag_name"])
+          PY
+          )
+          url="https://github.com/opentofu/opentofu/releases/download/${version}/tofu_${version#v}_linux_amd64.zip"
+          curl -fL "$url" -o /tmp/tofu.zip
+          unzip -q /tmp/tofu.zip -d /tmp/tofu
+          sudo install -m 0755 /tmp/tofu/tofu /usr/local/bin/tofu
+          tofu version
 
       - name: Restore dependencies
         run: dotnet restore
@@ -87,5 +106,17 @@ jobs:
           fi
           echo "TF_VAR_container_image=$IMAGE_URI" >> "$GITHUB_ENV"
 
-      - name: Skip infrastructure apply
-        run: echo "Skipping OpenTofu apply in GitHub Actions for now."
+      - name: OpenTofu init
+        if: env.ACT != 'true'
+        working-directory: ${{ env.INFRA_DIRECTORY }}
+        run: tofu init
+
+      - name: OpenTofu plan
+        if: env.ACT != 'true'
+        working-directory: ${{ env.INFRA_DIRECTORY }}
+        run: tofu plan -out=plan.out
+
+      - name: OpenTofu apply
+        if: env.ACT != 'true'
+        working-directory: ${{ env.INFRA_DIRECTORY }}
+        run: tofu apply -auto-approve plan.out

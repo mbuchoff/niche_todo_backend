@@ -29,6 +29,8 @@ All runtime knobs live in `variables.tf`. Recommended workflow:
 
 Optional: reuse the Postgres stack VPC by setting `postgres_state_path` to the Postgres stack `terraform.tfstate` (or set `existing_vpc_id` and `public_subnet_ids` directly).
 
+If you want the API to report its build, set `git_sha` (or `TF_VAR_git_sha`) to the commit SHA so the container receives `GIT_SHA`.
+
 ## Deploy
 
 ```bash
@@ -58,6 +60,7 @@ tofu destroy -var-file=app.auto.tfvars
   - `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (or an IAM role/identity provider) for authentication.
   - `AWS_REGION` if you override the default region.
   - `DATABASE_CONNECTION_STRING` for the Postgres endpoint.
+- Optional: `TF_VAR_git_sha` to populate the API `GIT_SHA` endpoint.
 - Optional: `TF_VAR_allowed_ingress_cidr_blocks` to restrict ALB exposure without editing tfvars.
 
 Update the workflow env variables if you change repository names or paths. Make sure `TF_VAR_container_image` always points to the image you just pushed so the ECS service picks up the new revision.
