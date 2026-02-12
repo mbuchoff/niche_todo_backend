@@ -44,10 +44,12 @@ data "terraform_remote_state" "postgres_s3" {
   backend = "s3"
 
   config = {
-    bucket  = var.postgres_state_s3_bucket
-    key     = var.postgres_state_s3_key
-    region  = coalesce(var.postgres_state_s3_region, var.aws_region)
-    profile = coalesce(var.postgres_state_s3_profile, var.aws_profile)
+    bucket = var.postgres_state_s3_bucket
+    key    = var.postgres_state_s3_key
+    region = coalesce(var.postgres_state_s3_region, var.aws_region)
+    profile = (
+      var.postgres_state_s3_profile != null ? var.postgres_state_s3_profile : var.aws_profile
+    )
   }
 }
 
@@ -418,6 +420,10 @@ resource "aws_ecs_task_definition" "todo_backend_api" {
       environment = [
         {
           name  = "ASPNETCORE_ENVIRONMENT"
+          value = var.aspnetcore_environment
+        },
+        {
+          name  = "DOTNET_ENVIRONMENT"
           value = var.aspnetcore_environment
         },
         {

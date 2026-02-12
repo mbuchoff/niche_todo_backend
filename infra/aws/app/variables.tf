@@ -14,9 +14,9 @@ variable "aws_region" {
 }
 
 variable "aws_profile" {
-  description = "AWS CLI profile used for credentials when running OpenTofu locally."
+  description = "Optional AWS CLI profile used for credentials when running OpenTofu locally. Leave unset for CI/CD (use env credentials / OIDC)."
   type        = string
-  default     = "niche-todo-admin"
+  default     = null
 }
 
 variable "vpc_cidr" {
@@ -41,22 +41,12 @@ variable "postgres_state_path" {
   description = "Optional path to the postgres stack state file for reusing VPC/subnets."
   type        = string
   default     = null
-
-  validation {
-    condition     = var.postgres_state_path == null || (var.postgres_state_s3_bucket == null && var.postgres_state_s3_key == null)
-    error_message = "Configure either postgres_state_path (local) OR postgres_state_s3_bucket/postgres_state_s3_key (S3), not both."
-  }
 }
 
 variable "postgres_state_s3_bucket" {
   description = "Optional S3 bucket holding the postgres stack state for reusing VPC/subnets."
   type        = string
   default     = null
-
-  validation {
-    condition     = var.postgres_state_s3_bucket == null || var.postgres_state_s3_key != null
-    error_message = "postgres_state_s3_bucket requires postgres_state_s3_key."
-  }
 }
 
 variable "postgres_state_s3_key" {

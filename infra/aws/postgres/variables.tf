@@ -14,9 +14,9 @@ variable "aws_region" {
 }
 
 variable "aws_profile" {
-  description = "AWS shared credentials profile name (from ~/.aws/credentials)."
+  description = "Optional AWS shared credentials profile name (from ~/.aws/credentials). Leave unset for CI/CD (use env credentials / OIDC)."
   type        = string
-  default     = "niche-todo-admin"
+  default     = null
 }
 
 variable "vpc_cidr" {
