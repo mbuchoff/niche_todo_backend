@@ -423,6 +423,10 @@ resource "aws_ecs_task_definition" "todo_backend_api" {
           value = var.aspnetcore_environment
         },
         {
+          name  = "DOTNET_ENVIRONMENT"
+          value = var.aspnetcore_environment
+        },
+        {
           name  = "ASPNETCORE_URLS"
           value = "http://+:${var.container_port}"
         }
