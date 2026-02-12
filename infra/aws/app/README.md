@@ -33,9 +33,18 @@ Optional: reuse the Postgres stack VPC by setting `postgres_state_path` to the P
 
 ```bash
 cd infra/aws/app
-tofu init
+cp backend.hcl.example backend.hcl
+tofu init -backend-config=backend.hcl
 tofu plan -var-file=app.auto.tfvars
 tofu apply -var-file=app.auto.tfvars
+```
+
+If you already have local state (`terraform.tfstate`) and want to move it into S3, run:
+
+```bash
+cd infra/aws/app
+cp backend.hcl.example backend.hcl
+tofu init -backend-config=backend.hcl -migrate-state
 ```
 
 The apply output includes the ALB DNS name plus the ECR repository URL. After pushing a container image, run `tofu apply` again with `-var 'container_image=<image-uri>'` so the ECS service updates to the latest digest.

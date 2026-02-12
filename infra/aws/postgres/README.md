@@ -30,9 +30,18 @@ Alternatively you can supply values with `-var` or a custom `-var-file`.
 
 ```bash
 cd infra/aws/postgres
-tofu init
+cp backend.hcl.example backend.hcl
+tofu init -backend-config=backend.hcl
 tofu plan -var-file=postgres.auto.tfvars
 tofu apply -var-file=postgres.auto.tfvars
+```
+
+If you already have local state (`terraform.tfstate`) and want to move it into S3, run:
+
+```bash
+cd infra/aws/postgres
+cp backend.hcl.example backend.hcl
+tofu init -backend-config=backend.hcl -migrate-state
 ```
 
 After a successful apply, capture the outputs:
