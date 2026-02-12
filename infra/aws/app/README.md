@@ -29,6 +29,8 @@ All runtime knobs live in `variables.tf`. Recommended workflow:
 
 Optional: reuse the Postgres stack VPC by setting `postgres_state_path` to the Postgres stack `terraform.tfstate` (or set `existing_vpc_id` and `public_subnet_ids` directly).
 
+If you want Swagger enabled on the deployed API, set `aspnetcore_environment = "Development"` in your tfvars (the default is `"Production"`).
+
 ## Deploy
 
 ```bash
