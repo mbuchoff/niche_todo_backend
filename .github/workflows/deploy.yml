@@ -8,12 +8,23 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      apply_infra:
+        description: "Run OpenTofu init/apply to deploy infrastructure changes (including updating ECS task definition)."
+        required: false
+        default: false
+        type: boolean
 
 env:
   AWS_REGION: us-east-1
   DOTNET_VERSION: 10.0.101
   ECR_REPOSITORY: todo-backend-api
   INFRA_DIRECTORY: infra/aws/app
+  TOFU_VERSION: 1.7.3
+  TOFU_STATE_BUCKET: niche-todo-tofu-state-use1-198771014193
+  TOFU_STATE_LOCK_TABLE: niche-todo-tofu-locks
+  TOFU_STATE_APP_KEY: niche-todo/prod/app/terraform.tfstate
+  TOFU_STATE_POSTGRES_KEY: niche-todo/prod/postgres/terraform.tfstate
 
 jobs:
   deploy:
@@ -23,6 +34,10 @@ jobs:
       id-token: write
     env:
       TF_VAR_database_connection_string: ${{ secrets.DATABASE_CONNECTION_STRING }}
+      TF_VAR_aws_region: ${{ env.AWS_REGION }}
+      TF_VAR_postgres_state_s3_bucket: ${{ env.TOFU_STATE_BUCKET }}
+      TF_VAR_postgres_state_s3_key: ${{ env.TOFU_STATE_POSTGRES_KEY }}
+      TF_VAR_postgres_state_s3_region: ${{ env.AWS_REGION }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -87,5 +102,28 @@ jobs:
           fi
           echo "TF_VAR_container_image=$IMAGE_URI" >> "$GITHUB_ENV"
 
+      - name: Set up OpenTofu
+        if: github.event_name == 'workflow_dispatch' && inputs.apply_infra
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+
+      - name: OpenTofu init
+        if: github.event_name == 'workflow_dispatch' && inputs.apply_infra
+        working-directory: ${{ env.INFRA_DIRECTORY }}
+        run: |
+          tofu init -input=false \
+            -backend-config="bucket=${TOFU_STATE_BUCKET}" \
+            -backend-config="key=${TOFU_STATE_APP_KEY}" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TOFU_STATE_LOCK_TABLE}" \
+            -backend-config="encrypt=true"
+
+      - name: OpenTofu apply
+        if: github.event_name == 'workflow_dispatch' && inputs.apply_infra
+        working-directory: ${{ env.INFRA_DIRECTORY }}
+        run: tofu apply -auto-approve -input=false
+
       - name: Skip infrastructure apply
-        run: echo "Skipping OpenTofu apply in GitHub Actions for now."
+        if: github.event_name != 'workflow_dispatch' || !inputs.apply_infra
+        run: echo "Skipping OpenTofu apply (set workflow_dispatch input apply_infra=true to enable)."

@@ -14,9 +14,9 @@ variable "aws_region" {
 }
 
 variable "aws_profile" {
-  description = "AWS CLI profile used for credentials when running OpenTofu locally."
+  description = "Optional AWS CLI profile used for credentials when running OpenTofu locally. Leave unset for CI/CD (use env credentials / OIDC)."
   type        = string
-  default     = "niche-todo-admin"
+  default     = null
 }
 
 variable "vpc_cidr" {
