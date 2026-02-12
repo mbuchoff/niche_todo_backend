@@ -1,0 +1,9 @@
+# ABOUTME: Example OpenTofu S3 backend config for the AWS API stack.
+# ABOUTME: Copy to backend.hcl (gitignored) and use with `tofu init -backend-config=backend.hcl`.
+
+bucket         = "niche-todo-tofu-state-use1-<aws-account-id>"
+key            = "niche-todo/prod/app/terraform.tfstate"
+region         = "us-east-1"
+dynamodb_table = "niche-todo-tofu-locks"
+encrypt        = true
+profile        = "niche-todo-admin"

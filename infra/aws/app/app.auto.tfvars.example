@@ -12,6 +12,11 @@ database_connection_string = "Host=example.cluster-123456789012.us-east-1.rds.am
 database_security_group_id = "sg-0123456789abcdef0"
 # Optional: reuse the VPC/subnets from the postgres stack state.
 # postgres_state_path = "../postgres/terraform.tfstate"
+# Optional: reuse the VPC/subnets from the postgres stack state stored in S3.
+# postgres_state_s3_bucket = "niche-todo-tofu-state-use1-<aws-account-id>"
+# postgres_state_s3_key = "niche-todo/prod/postgres/terraform.tfstate"
+# postgres_state_s3_region = "us-east-1"
+# postgres_state_s3_profile = "niche-todo-admin"
 # Optional: explicitly reuse an existing VPC and its public subnets.
 # existing_vpc_id = "vpc-0123456789abcdef0"
 # public_subnet_ids = ["subnet-0123456789abcdef0", "subnet-abcdef0123456789"]

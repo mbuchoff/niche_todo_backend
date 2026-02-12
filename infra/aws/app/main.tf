@@ -25,12 +25,29 @@ data "aws_caller_identity" "current" {}
 
 data "aws_partition" "current" {}
 
-data "terraform_remote_state" "postgres" {
-  count   = var.postgres_state_path == null ? 0 : 1
+locals {
+  use_postgres_state_local = var.postgres_state_path != null
+  use_postgres_state_s3    = var.postgres_state_s3_bucket != null && var.postgres_state_s3_key != null
+}
+
+data "terraform_remote_state" "postgres_local" {
+  count   = local.use_postgres_state_local ? 1 : 0
   backend = "local"
 
   config = {
     path = var.postgres_state_path
+  }
+}
+
+data "terraform_remote_state" "postgres_s3" {
+  count   = local.use_postgres_state_s3 ? 1 : 0
+  backend = "s3"
+
+  config = {
+    bucket  = var.postgres_state_s3_bucket
+    key     = var.postgres_state_s3_key
+    region  = coalesce(var.postgres_state_s3_region, var.aws_region)
+    profile = coalesce(var.postgres_state_s3_profile, var.aws_profile)
   }
 }
 
@@ -47,9 +64,9 @@ locals {
   subnet_azs = {
     for idx, az in slice(data.aws_availability_zones.available.names, 0, local.az_count) : idx => az
   }
-  postgres_vpc_id               = var.postgres_state_path == null ? null : try(data.terraform_remote_state.postgres[0].outputs.vpc_id, null)
-  postgres_public_subnet_ids    = var.postgres_state_path == null ? null : try(data.terraform_remote_state.postgres[0].outputs.public_subnet_ids, null)
-  postgres_db_security_group_id = var.postgres_state_path == null ? null : try(data.terraform_remote_state.postgres[0].outputs.db_security_group_id, null)
+  postgres_vpc_id               = local.use_postgres_state_local ? try(data.terraform_remote_state.postgres_local[0].outputs.vpc_id, null) : (local.use_postgres_state_s3 ? try(data.terraform_remote_state.postgres_s3[0].outputs.vpc_id, null) : null)
+  postgres_public_subnet_ids    = local.use_postgres_state_local ? try(data.terraform_remote_state.postgres_local[0].outputs.public_subnet_ids, null) : (local.use_postgres_state_s3 ? try(data.terraform_remote_state.postgres_s3[0].outputs.public_subnet_ids, null) : null)
+  postgres_db_security_group_id = local.use_postgres_state_local ? try(data.terraform_remote_state.postgres_local[0].outputs.db_security_group_id, null) : (local.use_postgres_state_s3 ? try(data.terraform_remote_state.postgres_s3[0].outputs.db_security_group_id, null) : null)
   use_existing_vpc              = var.existing_vpc_id != null || local.postgres_vpc_id != null
   vpc_id                        = var.existing_vpc_id != null ? var.existing_vpc_id : (local.postgres_vpc_id != null ? local.postgres_vpc_id : aws_vpc.todo_backend_api[0].id)
   public_subnet_ids             = var.public_subnet_ids != null ? var.public_subnet_ids : (local.postgres_public_subnet_ids != null ? local.postgres_public_subnet_ids : [for subnet in aws_subnet.public : subnet.id])
