@@ -14,6 +14,14 @@ on:
         required: false
         default: false
         type: boolean
+      aspnetcore_environment:
+        description: "ASPNETCORE_ENVIRONMENT for the deployed container. Use Development to enable Swagger."
+        required: false
+        default: Production
+        type: choice
+        options:
+          - Production
+          - Development
 
 env:
   AWS_REGION: us-east-1
@@ -122,6 +130,8 @@ jobs:
       - name: OpenTofu apply
         if: github.event_name == 'workflow_dispatch' && inputs.apply_infra
         working-directory: ${{ env.INFRA_DIRECTORY }}
+        env:
+          TF_VAR_aspnetcore_environment: ${{ inputs.aspnetcore_environment }}
         run: tofu apply -auto-approve -input=false
 
       - name: Skip infrastructure apply
