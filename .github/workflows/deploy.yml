@@ -17,7 +17,7 @@ on:
       aspnetcore_environment:
         description: "ASPNETCORE_ENVIRONMENT for the deployed container. Use Development to enable Swagger."
         required: false
-        default: Production
+        default: Development
         type: choice
         options:
           - Production
