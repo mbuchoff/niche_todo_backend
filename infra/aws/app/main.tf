@@ -418,7 +418,7 @@ resource "aws_ecs_task_definition" "todo_backend_api" {
       environment = [
         {
           name  = "ASPNETCORE_ENVIRONMENT"
-          value = "Production"
+          value = var.aspnetcore_environment
         },
         {
           name  = "ASPNETCORE_URLS"

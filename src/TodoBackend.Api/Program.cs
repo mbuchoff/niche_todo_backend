@@ -1,8 +1,10 @@
 // ABOUTME: Entry point wiring together the Minimal API, auth services, and persistence.
 // ABOUTME: Hosts JWT-secured endpoints for Google sign-in, refresh, logout, and `/me`.
 
+using System.Net;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -91,6 +93,20 @@ if (app.Environment.IsDevelopment() || app.Environment.EnvironmentName == "Testi
 
 if (!app.Environment.EnvironmentName.Equals("Testing", StringComparison.OrdinalIgnoreCase))
 {
+    // When running behind a reverse proxy (CloudFront/ALB), trust forwarded proto so HTTPS redirection
+    // doesn't cause redirect loops (the origin may be HTTP even when the viewer is HTTPS).
+    app.UseForwardedHeaders(new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+        // This app is intended to run behind managed AWS proxies (CloudFront/ALB).
+        // Accepting all proxy sources is sufficient for this project; a hardened setup should restrict
+        // these to known proxy networks to prevent header spoofing.
+        KnownIPNetworks =
+        {
+            new System.Net.IPNetwork(IPAddress.Any, 0),
+            new System.Net.IPNetwork(IPAddress.IPv6Any, 0)
+        }
+    });
     app.UseHttpsRedirection();
 }
 app.UseAuthentication();

@@ -143,6 +143,12 @@ variable "container_image" {
   default     = null
 }
 
+variable "aspnetcore_environment" {
+  description = "ASP.NET Core environment name (controls dev-only middleware like Swagger)."
+  type        = string
+  default     = "Production"
+}
+
 variable "database_connection_string" {
   description = "Connection string injected into the API container."
   type        = string
