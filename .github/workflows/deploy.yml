@@ -34,10 +34,10 @@ jobs:
       id-token: write
     env:
       TF_VAR_database_connection_string: ${{ secrets.DATABASE_CONNECTION_STRING }}
-      TF_VAR_aws_region: ${{ env.AWS_REGION }}
-      TF_VAR_postgres_state_s3_bucket: ${{ env.TOFU_STATE_BUCKET }}
-      TF_VAR_postgres_state_s3_key: ${{ env.TOFU_STATE_POSTGRES_KEY }}
-      TF_VAR_postgres_state_s3_region: ${{ env.AWS_REGION }}
+      TF_VAR_aws_region: us-east-1
+      TF_VAR_postgres_state_s3_bucket: niche-todo-tofu-state-use1-198771014193
+      TF_VAR_postgres_state_s3_key: niche-todo/prod/postgres/terraform.tfstate
+      TF_VAR_postgres_state_s3_region: us-east-1
     steps:
       - name: Checkout
         uses: actions/checkout@v4
