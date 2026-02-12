@@ -4,6 +4,7 @@
 using System.Net;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -327,7 +328,9 @@ todosGroup.MapGet("", async Task<IResult> (
     var ordered = OrderTodosForHierarchy(todos);
     return Results.Ok(ordered.Select(ToTodoResponse).ToList());
 })
-.WithName("GetTodos");
+.WithName("GetTodos")
+.Produces<List<TodoResponse>>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status401Unauthorized);
 
 todosGroup.MapPost("", async Task<IResult> (
     [FromBody] CreateTodoRequest request,
@@ -393,7 +396,10 @@ todosGroup.MapPost("", async Task<IResult> (
 
     return Results.Created($"/todos/{todo.Id}", ToTodoResponse(todo));
 })
-.WithName("CreateTodo");
+.WithName("CreateTodo")
+.Produces<TodoResponse>(StatusCodes.Status201Created)
+.ProducesValidationProblem()
+.Produces(StatusCodes.Status401Unauthorized);
 
 todosGroup.MapPut("/{id:guid}", async Task<IResult> (
     Guid id,
@@ -442,7 +448,11 @@ todosGroup.MapPut("/{id:guid}", async Task<IResult> (
 
     return Results.Ok(ToTodoResponse(todo));
 })
-.WithName("UpdateTodo");
+.WithName("UpdateTodo")
+.Produces<TodoResponse>(StatusCodes.Status200OK)
+.ProducesValidationProblem()
+.Produces(StatusCodes.Status401Unauthorized)
+.Produces(StatusCodes.Status404NotFound);
 
 todosGroup.MapDelete("/{id:guid}", async Task<IResult> (
     Guid id,
@@ -500,7 +510,10 @@ todosGroup.MapDelete("/{id:guid}", async Task<IResult> (
     await db.SaveChangesAsync(cancellationToken);
     return Results.NoContent();
 })
-.WithName("DeleteTodo");
+.WithName("DeleteTodo")
+.Produces(StatusCodes.Status204NoContent)
+.Produces(StatusCodes.Status401Unauthorized)
+.Produces(StatusCodes.Status404NotFound);
 
 todosGroup.MapPut("/reorder", async Task<IResult> (
     [FromBody] ReorderTodosRequest request,
@@ -607,7 +620,10 @@ todosGroup.MapPut("/reorder", async Task<IResult> (
     operation.Description = "Breaking change: the request now requires an items list " +
                             "containing todo id, parentId, and sortOrder; orderedIds is no longer supported.";
     return operation;
-});
+})
+.Produces(StatusCodes.Status204NoContent)
+.ProducesValidationProblem()
+.Produces(StatusCodes.Status401Unauthorized);
 
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }))
     .WithName("Healthz");
