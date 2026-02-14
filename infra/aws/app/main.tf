@@ -417,20 +417,28 @@ resource "aws_ecs_task_definition" "todo_backend_api" {
           protocol      = "tcp"
         }
       ]
-      environment = [
-        {
-          name  = "ASPNETCORE_ENVIRONMENT"
-          value = var.aspnetcore_environment
-        },
-        {
-          name  = "DOTNET_ENVIRONMENT"
-          value = var.aspnetcore_environment
-        },
-        {
-          name  = "ASPNETCORE_URLS"
-          value = "http://+:${var.container_port}"
-        }
-      ]
+      environment = concat(
+        [
+          {
+            name  = "ASPNETCORE_ENVIRONMENT"
+            value = var.aspnetcore_environment
+          },
+          {
+            name  = "DOTNET_ENVIRONMENT"
+            value = var.aspnetcore_environment
+          },
+          {
+            name  = "ASPNETCORE_URLS"
+            value = "http://+:${var.container_port}"
+          }
+        ],
+        var.google_client_id == null ? [] : [
+          {
+            name  = "Auth__Google__ClientId"
+            value = var.google_client_id
+          }
+        ]
+      )
       secrets = [
         {
           name      = "ConnectionStrings__Database"

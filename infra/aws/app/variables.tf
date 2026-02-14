@@ -139,6 +139,17 @@ variable "aspnetcore_environment" {
   default     = "Production"
 }
 
+variable "google_client_id" {
+  description = "Google OAuth web client ID used to validate Google ID tokens."
+  type        = string
+  default     = null
+
+  validation {
+    condition = var.google_client_id == null || length(trimspace(var.google_client_id)) > 0
+    error_message = "google_client_id must be a non-empty value when provided."
+  }
+}
+
 variable "database_connection_string" {
   description = "Connection string injected into the API container."
   type        = string

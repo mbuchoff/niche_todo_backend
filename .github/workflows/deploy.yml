@@ -42,6 +42,7 @@ jobs:
       id-token: write
     env:
       TF_VAR_database_connection_string: ${{ secrets.DATABASE_CONNECTION_STRING }}
+      TF_VAR_google_client_id: ${{ secrets.GOOGLE_CLIENT_ID }}
       TF_VAR_aws_region: us-east-1
       TF_VAR_postgres_state_s3_bucket: niche-todo-tofu-state-use1-198771014193
       TF_VAR_postgres_state_s3_key: niche-todo/prod/postgres/terraform.tfstate
@@ -99,6 +100,10 @@ jobs:
         run: |
           if [ -z "${TF_VAR_database_connection_string}" ]; then
             echo "DATABASE_CONNECTION_STRING secret is required." >&2
+            exit 1
+          fi
+          if [ -z "${TF_VAR_google_client_id}" ]; then
+            echo "GOOGLE_CLIENT_ID secret is required for Google auth." >&2
             exit 1
           fi
 
