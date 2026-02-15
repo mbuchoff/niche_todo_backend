@@ -30,6 +30,7 @@ All runtime knobs live in `variables.tf`. Recommended workflow:
 Optional: reuse the Postgres stack VPC by setting `postgres_state_path` to the Postgres stack `terraform.tfstate` (or set `existing_vpc_id` and `public_subnet_ids` directly).
 
 If you want Swagger enabled on the deployed API, set `aspnetcore_environment = "Development"` in your tfvars (the default is `"Production"`).
+Set `google_client_id` to the Google OAuth **Web client ID** used by the Android app.
 
 ## Deploy
 
@@ -69,6 +70,7 @@ tofu destroy -var-file=app.auto.tfvars
   - `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (or an IAM role/identity provider) for authentication.
   - `AWS_REGION` if you override the default region.
   - `DATABASE_CONNECTION_STRING` for the Postgres endpoint.
+  - `GOOGLE_CLIENT_ID` for the OAuth web client ID.
 - Optional: `TF_VAR_allowed_ingress_cidr_blocks` to restrict ALB exposure without editing tfvars.
 
 Update the workflow env variables if you change repository names or paths. Make sure `TF_VAR_container_image` always points to the image you just pushed so the ECS service picks up the new revision.
